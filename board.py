@@ -1,5 +1,6 @@
 import pygame
 import numpy as np
+from sklearn import svm
 
 LEFT = 1
 
@@ -14,19 +15,26 @@ class Stroker(object):
         self.threshold = 10
         self.sample_size = 10
         self.paths = []
+        self.targets = [0]
         self.path_to_draw = None
+        self.clf = svm.SVC()
+        self.mode = 'build'
+        self.predicted_target = 0
 
     def finish_path(self, path):
         path = self.finalize_path(path)
+        vecfunc = np.vectorize(lambda a: (a * 80) + 160)
         if path is not None:
-            self.paths.append(path)
+            if self.mode == 'build':
+                self.paths.append(path.flatten())
 
-            vecfunc = np.vectorize(lambda a: (a * 100) + 160)
-            path_array = vecfunc(path_array)
-            print path
+                self.targets.append(self.targets[-1])
+            else:
+                self.predicted_target = self.clf.predict([path.flatten()])[0]
+
+            self.path_to_draw = vecfunc(path)
         else:
             print 'path too short'
-
 
     def start_stroke(self, pos):
         self.point_queue = [pos]
@@ -73,13 +81,23 @@ class Stroker(object):
     def draw(self):
         if len(self.point_queue) >= 2:
             pygame.draw.lines(screen, (255,255,255), False, self.point_queue)
-        elif self.path_to_draw:
+        elif self.path_to_draw is not None:
             pygame.draw.lines(screen, (255,255,255), False, self.path_to_draw)
+        if self.mode == "build":
+            self.render_text("Target:"+str(self.targets[-1]))
+        else:
+            self.render_text("Prediction:"+str(self.predicted_target))
 
-        
+    def render_text(self, score):
+        font=pygame.font.Font(None,30)
+        scoretext=font.render(score, 1,(255,255,255))
+        screen.blit(scoretext, (20, 20))
+
+    def train(self):
+        self.clf.fit(self.paths, self.targets[:-1])
 
 stroker = Stroker()
-
+pygame.font.init()
 while running:
     event = pygame.event.poll()
     if event.type == pygame.QUIT:
@@ -90,6 +108,23 @@ while running:
         stroker.end_stroke(event.pos)
     elif event.type == pygame.MOUSEMOTION:
         stroker.insert_point(event.pos)
+    elif event.type == pygame.KEYDOWN:
+        k = event.unicode
+        print k
+        if k=='l':
+            print 'learning...'
+            stroker.train()
+            print 'learning complete.'
+        elif k=='b':
+            print 'enter building mode'
+            stroker.mode = 'build'
+        elif k=='v':
+            print 'enter predict mode'
+            stroker.mode = 'predict'
+        try:
+            index = int(k)
+            stroker.targets[-1] = index
+        except:pass
 
     screen.fill((0, 0, 0))
     stroker.draw()
